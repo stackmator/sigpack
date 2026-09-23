@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test (windows-latest)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Unit tests
+        run: cargo test --locked
+
+      - name: Build CLI
+        run: cargo build --locked
+
+      - name: Real signed-PE test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $dir = Join-Path $env:RUNNER_TEMP 'sigpack-signed'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+
+          # Sign the freshly built CLI with a throwaway self-signed code-signing
+          # certificate, giving us a real embedded Authenticode signature.
+          $cert = New-SelfSignedCertificate `
+            -Subject 'CN=sigpack-ci' `
+            -Type CodeSigningCert `
+            -CertStoreLocation Cert:\CurrentUser\My `
+            -KeyUsage DigitalSignature
+
+          $signed = Join-Path $dir 'signed.exe'
+          Copy-Item '.\target\debug\sigpack.exe' $signed
+          Set-AuthenticodeSignature -FilePath $signed -Certificate $cert | Out-Null
+
+          $before = Get-AuthenticodeSignature $signed
+          if ($before.SignatureType -ne 'Authenticode') {
+            throw "expected an embedded Authenticode signature, got '$($before.SignatureType)'"
+          }
+          Write-Host "signed binary status: $($before.Status)"
+
+          # The integration tests operate on this real signed PE.
+          $env:SIGPACK_TEST_PE = $signed
+          cargo test --locked --test signed_pe -- --nocapture
+          if ($LASTEXITCODE -ne 0) { throw "signed_pe integration tests failed" }
+
+          # And a direct end-to-end check with the CLI + Windows verifier.
+          $payload = Join-Path $dir 'payload.bin'
+          Set-Content -Path $payload -Value 'ci-blob' -NoNewline
+          $packed = Join-Path $dir 'packed.exe'
+          & '.\target\debug\sigpack.exe' add $signed $payload -o $packed
+          if ($LASTEXITCODE -ne 0) { throw "sigpack add failed" }
+
+          $after = Get-AuthenticodeSignature $packed
+          if ($after.SignatureType -ne 'Authenticode') {
+            throw "signature type changed to '$($after.SignatureType)'"
+          }
+          if ($after.Status -ne $before.Status) {
+            throw "signature status changed from '$($before.Status)' to '$($after.Status)'"
+          }
+
+          $listing = & '.\target\debug\sigpack.exe' list $packed
+          if ($LASTEXITCODE -ne 0) { throw "sigpack list failed" }
+          if ($listing -notmatch 'ci-blob') { throw "blob not readable: $listing" }
+
+          Write-Host "OK: signature $($before.Status) -> $($after.Status); blob round-tripped"

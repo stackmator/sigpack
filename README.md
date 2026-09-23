@@ -1,5 +1,10 @@
 # sigpack
 
+[![crates.io](https://img.shields.io/crates/v/sigpack.svg)](https://crates.io/crates/sigpack)
+[![docs.rs](https://docs.rs/sigpack/badge.svg)](https://docs.rs/sigpack)
+[![CI](https://github.com/stackmator/sigpack/actions/workflows/ci.yml/badge.svg)](https://github.com/stackmator/sigpack/actions/workflows/ci.yml)
+[![license](https://img.shields.io/crates/l/sigpack.svg)](#license)
+
 **Store data inside an Authenticode-signed Windows PE — without breaking the signature.**
 
 `sigpack` hides arbitrary bytes in the digital signature of a `.exe`/`.dll`/`.sys`
@@ -93,6 +98,23 @@ and `blobs_in_signed_data` operate directly on a DER-encoded PKCS#7 `SignedData`
   tamper-proof data.
 * The crate reads and rewrites the signature; it does not create or verify
   signatures.
+
+## Releasing
+
+CI (`.github/workflows/ci.yml`) runs formatting, clippy, unit tests and a
+real signed-PE round-trip on `windows-latest`. To publish, add a
+`CARGO_REGISTRY_TOKEN` repository secret and push a tag matching the
+`Cargo.toml` version:
+
+```console
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+`.github/workflows/publish.yml` verifies the tag, runs the tests and publishes
+with `cargo publish`. It can also be run manually from the Actions tab; the
+**Dry run** checkbox defaults to on, in which case it only runs
+`cargo publish --dry-run` and uploads nothing.
 
 ## License
 
