@@ -1,0 +1,13 @@
+[package]
+name = "sigpack"
+version = "0.1.0"
+edition = "2024"
+description = "Store arbitrary data in the Authenticode signature of a signed Windows PE without invalidating the signature"
+license = "MIT OR Apache-2.0"
+keywords = ["authenticode", "pe", "signature", "pkcs7", "code-signing"]
+categories = ["command-line-utilities", "encoding"]
+
+[dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
+der = { version = "0.8.2", features = ["alloc", "oid"] }
+thiserror = "2.0.20"
